@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 
 type SentencePair = {
   keyword: string;
@@ -13,6 +12,7 @@ export default function LearningPage() {
   const [sentences, setSentences] = useState<SentencePair[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [currentPair, setCurrentPair] = useState<SentencePair | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const speechSynthesisRef = useRef<SpeechSynthesis | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -47,36 +47,57 @@ export default function LearningPage() {
     };
   }, []);
 
-  const speak = (text: string) => {
+  const speak = (text: string, onComplete?: () => void) => {
     if (!speechSynthesisRef.current) {
       alert("Sorry, your browser does not support Speech Synthesis.");
       return;
     }
+    
     console.log(`[speak] Starting to speak: "${text}"`);
     speechSynthesisRef.current.cancel();
+    setIsPlaying(true);
+    
     const settings = getSettings();
-    for (let i = 0; i < settings.repeatCount; i++) {
-      setTimeout(() => {
-        try {
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.rate = settings.speechRate;
-          utterance.pitch = settings.speechPitch;
-          utterance.onstart = () => console.log(`[speak] Utterance started: "${text}" (repeat ${i + 1})`);
-          utterance.onend = () => console.log(`[speak] Utterance ended: "${text}" (repeat ${i + 1})`);
-          utterance.onerror = (event) => console.error(`[speak] Utterance error: "${text}"`, event);
-          speechSynthesisRef.current?.speak(utterance);
-          console.log(`[speak] Utterance queued: "${text}" (repeat ${i + 1})`);
-        } catch (e) {
-          console.error("[speak] Speech error:", e);
-        }
-      }, i * 2500);
-    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = settings.speechRate;
+    utterance.pitch = settings.speechPitch;
+    
+    utterance.onstart = () => {
+      console.log(`[speak] Utterance started: "${text}"`);
+      setIsPlaying(true);
+    };
+    
+    utterance.onend = () => {
+      console.log(`[speak] Utterance ended: "${text}"`);
+      setIsPlaying(false);
+      if (onComplete) onComplete();
+    };
+    
+    utterance.onerror = (event) => {
+      console.error(`[speak] Utterance error: "${text}"`, event);
+      setIsPlaying(false);
+    };
+    
+    speechSynthesisRef.current.speak(utterance);
+    console.log(`[speak] Utterance queued: "${text}"`);
+  };
+
+  const speakWord = () => {
+    if (!currentPair) return;
+    console.log("[speakWord] Speaking keyword:", currentPair.keyword);
+    speak(currentPair.keyword);
+  };
+
+  const speakSentence = () => {
+    if (!currentPair) return;
+    console.log("[speakSentence] Speaking sentence:", currentPair.sentence);
+    speak(currentPair.sentence);
   };
 
   const showNextPair = () => {
     if (sentences.length === 0) return;
+    
     let nextIndex = currentIndex;
-    // Ensure nextIndex is different from currentIndex
     if (sentences.length === 1) {
       nextIndex = 0;
     } else {
@@ -84,16 +105,15 @@ export default function LearningPage() {
         nextIndex = Math.floor(Math.random() * sentences.length);
       } while (nextIndex === currentIndex);
     }
-    console.log("Next index:", nextIndex);
+    
+    console.log("[showNextPair] Next index:", nextIndex);
     setCurrentIndex(nextIndex);
     const pair = sentences[nextIndex];
     setCurrentPair(pair);
-    console.log("Showing next pair:", pair);
+    console.log("[showNextPair] New pair:", pair);
+    
+    // Only speak the word initially
     speak(pair.keyword);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      speak(pair.sentence);
-    }, getSettings().wordDelay * 1000);
   };
 
   return (
@@ -115,35 +135,30 @@ export default function LearningPage() {
         </div>
         
         <div className="flex gap-4 justify-center">
-          <Button 
+          <button
             onClick={showNextPair}
-            className="text-lg px-8 py-4"
+            disabled={isPlaying}
+            className="text-lg px-8 py-4 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {currentIndex === -1 ? "Start" : "Next"}
-          </Button>
+          </button>
           
           {currentPair && (
             <>
-              <Button
-                onClick={() => {
-                  console.log("Repeat word:", currentPair.keyword);
-                  speak(currentPair.keyword);
-                }}
-                variant="outline"
-                className="text-lg px-8 py-4"
+              <button
+                onClick={speakWord}
+                disabled={isPlaying}
+                className="text-lg px-8 py-4 border border-gray-400 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Repeat Word
-              </Button>
-              <Button
-                onClick={() => {
-                  console.log("Repeat sentence:", currentPair.sentence);
-                  speak(currentPair.sentence);
-                }}
-                variant="outline"
-                className="text-lg px-8 py-4"
+                Word Only
+              </button>
+              <button
+                onClick={speakSentence}
+                disabled={isPlaying}
+                className="text-lg px-8 py-4 border border-gray-400 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Repeat Sentence
-              </Button>
+                Full Sentence
+              </button>
             </>
           )}
         </div>
